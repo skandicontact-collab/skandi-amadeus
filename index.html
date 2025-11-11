@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SKANDI / Amadeus Agent Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f3f5f8;
+      color: #111827;
+    }
+    header {
+      background: #022e64;
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+    header span {
+      font-size: 12px;
+      opacity: 0.85;
+    }
+    main {
+      max-width: 1100px;
+      margin: 20px auto 40px;
+      padding: 0 16px;
+    }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .tab-btn {
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      padding: 6px 12px;
+      font-size: 13px;
+      background: #e5e7eb;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #022e64;
+      color: #fff;
+      border-color: #022e64;
+    }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      padding: 16px 20px;
+      margin-bottom: 14px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+    h3 {
+      margin: 12px 0 6px;
+      font-size: 15px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 3px;
+      color: #4b5563;
+    }
+    input, select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #022e64;
+      box-shadow: 0 0 0 1px rgba(2,46,100,0.15);
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .field {
+      margin-bottom: 8px;
+    }
+    .small-inputs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .small-inputs input, .small-inputs select {
+      width: auto;
+      min-width: 110px;
+    }
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: #022e64;
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #ff7300;
+      color: #fff;
+    }
+    .btn-outline {
+      background: #fff;
+      border: 1px solid #d1d5db;
+    }
+    .results-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .result-item {
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      background: #f9fafb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .muted {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .price {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .error {
+      font-size: 12px;
+      color: #b91c1c;
+      margin-top: 6px;
+    }
+    .success {
+      font-size: 12px;
+      color: #166534;
+      margin-top: 6px;
+    }
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    .passenger-block {
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #f9fafb;
+    }
+    .passenger-block h4 {
+      margin: 0 0 4px;
+      font-size: 13px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>SKANDI Travels – Amadeus Agent Console</h1>
+    <span>Multi-pax, SSR & seat selection (test environment)</span>
+  </div>
+  <div style="font-size:12px;opacity:.8;">ENV: TEST</div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="flights">Flights</button>
+    <button class="tab-btn" data-tab="hotels">Hotels</button>
+  </div>
+
+  <!-- FLIGHTS TAB -->
+  <div class="card" id="tab-flights">
+    <h2>Flight Search</h2>
+
+    <div class="grid-3">
+      <div class="field">
+        <label>From (IATA)</label>
+        <input id="f-origin" placeholder="JFK">
+      </div>
+      <div class="field">
+        <label>To (IATA)</label>
+        <input id="f-destination" placeholder="HER">
+      </div>
+      <div class="field">
+        <label>Departure date</label>
+        <input id="f-departure" type="date">
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="field">
+        <label>Return date (optional)</label>
+        <input id="f-return" type="date">
+      </div>
+      <div class="field">
+        <label>Adults</label>
+        <input id="f-adults" type="number" min="1" value="2">
+      </div>
+      <div class="field">
+        <label>Children</label>
+        <input id="f-children" type="number" min="0" value="2">
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="field">
+        <label>Infants</label>
+        <input id="f-infants" type="number" min="0" value="0">
+      </div>
+      <div class="field">
+        <label>Cabin</label>
+        <select id="f-cabin">
+          <option value="ECONOMY">Economy</option>
+          <option value="PREMIUM_ECONOMY">Premium Economy</option>
+          <option value="BUSINESS" selected>Business</option>
+          <option value="FIRST">First</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Currency</label>
+        <input id="f-currency" value="USD">
+      </div>
+    </div>
+    <button class="btn-primary" id="f-search-btn">Search flights</button>
+    <div class="error" id="f-error"></div>
+
+    <div class="section-title">Results</div>
+    <div id="f-results" class="results-list"></div>
+
+    <div class="section-title">Seat maps (for selected offer)</div>
+    <button class="btn-outline" id="f-seatmap-btn">Load seatmaps</button>
+    <div class="muted" id="f-seatmap-note">Seat selections per pax will be populated below if available.</div>
+    <div class="error" id="f-seatmap-error"></div>
+
+    <h3>Passengers & APIS</h3>
+    <div class="grid-3">
+      <div class="field">
+        <label>Adults</label>
+        <input id="p-adults" type="number" min="1" value="2">
+      </div>
+      <div class="field">
+        <label>Children</label>
+        <input id="p-children" type="number" min="0" value="2">
+      </div>
+      <div class="field">
+        <label>Infants</label>
+        <input id="p-infants" type="number" min="0" value="0">
+      </div>
+    </div>
+    <button class="btn-outline" id="p-build-btn">Build passenger form</button>
+
+    <div id="passenger-container" style="margin-top:8px;"></div>
+
+    <div class="section-title">Booking & Email</div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Lead contact email (override, optional)</label>
+        <input id="contact-email" placeholder="if different from lead pax">
+      </div>
+      <div class="field">
+        <label>Lead contact phone</label>
+        <input id="contact-phone" placeholder="+1 000 000 0000">
+      </div>
+    </div>
+    <button class="btn-secondary" id="f-book-btn">Book flight(s) & email PDF</button>
+    <div class="success" id="f-success"></div>
+    <div class="error" id="f-book-error"></div>
+
+    <div class="section-title">Last flight booking summary</div>
+    <div class="muted" id="f-confirmation"></div>
+  </div>
+
+  <!-- HOTELS TAB -->
+  <div class="card" id="tab-hotels" style="display:none;">
+    <h2>Hotels – Search & Book (standalone)</h2>
+
+    <div class="grid-3">
+      <div class="field">
+        <label>City Code (e.g. HER)</label>
+        <input id="h-city" placeholder="HER">
+      </div>
+      <div class="field">
+        <label>Check-in</label>
+        <input id="h-checkin" type="date">
+      </div>
+      <div class="field">
+        <label>Check-out</label>
+        <input id="h-checkout" type="date">
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="field">
+        <label>Adults</label>
+        <input id="h-adults" type="number" min="1" value="2">
+      </div>
+      <div class="field">
+        <label>Rooms</label>
+        <input id="h-rooms" type="number" min="1" value="1">
+      </div>
+      <div class="field">
+        <label>Currency</label>
+        <input id="h-currency" value="USD">
+      </div>
+    </div>
+    <button class="btn-primary" id="h-search-btn">Search hotels</button>
+    <div class="error" id="h-error"></div>
+
+    <div class="section-title">Results</div>
+    <div id="h-results" class="results-list"></div>
+
+    <div class="section-title">Guest & payment (test)</div>
+    <div class="grid-3">
+      <div class="field">
+        <label>Guest full name</label>
+        <input id="h-guest-name">
+      </div>
+      <div class="field">
+        <label>Guest email</label>
+        <input id="h-guest-email">
+      </div>
+      <div class="field">
+        <label>Card (test mask)</label>
+        <input id="h-card-mask" placeholder="4111********1111">
+      </div>
+    </div>
+    <button class="btn-secondary" id="h-book-btn">Book selected hotel</button>
+    <div class="success" id="h-success"></div>
+    <div class="error" id="h-book-error"></div>
+
+    <div class="section-title">Last hotel booking summary</div>
+    <div class="muted" id="h-confirmation"></div>
+  </div>
+</main>
+
+<script>
+  // Tabs
+  const tabBtns = document.querySelectorAll(".tab-btn");
+  const flightsTab = document.getElementById("tab-flights");
+  const hotelsTab = document.getElementById("tab-hotels");
+  tabBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      tabBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      flightsTab.style.display = tab === "flights" ? "block" : "none";
+      hotelsTab.style.display = tab === "hotels" ? "block" : "none";
+    });
+  });
+
+  // ---------- FLIGHTS ----------
+  const fOrigin = document.getElementById("f-origin");
+  const fDest   = document.getElementById("f-destination");
+  const fDep    = document.getElementById("f-departure");
+  const fRet    = document.getElementById("f-return");
+  const fAdults = document.getElementById("f-adults");
+  const fChildren = document.getElementById("f-children");
+  const fInfants = document.getElementById("f-infants");
+  const fCabin  = document.getElementById("f-cabin");
+  const fCurr   = document.getElementById("f-currency");
+
+  const fSearchBtn = document.getElementById("f-search-btn");
+  const fError = document.getElementById("f-error");
+  const fResults = document.getElementById("f-results");
+
+  const pAdults = document.getElementById("p-adults");
+  const pChildren = document.getElementById("p-children");
+  const pInfants = document.getElementById("p-infants");
+  const pBuildBtn = document.getElementById("p-build-btn");
+  const passengerContainer = document.getElementById("passenger-container");
+
+  const contactEmail = document.getElementById("contact-email");
+  const contactPhone = document.getElementById("contact-phone");
+  const fBookBtn = document.getElementById("f-book-btn");
+  const fSuccess = document.getElementById("f-success");
+  const fBookError = document.getElementById("f-book-error");
+  const fConfirmation = document.getElementById("f-confirmation");
+
+  const seatmapBtn = document.getElementById("f-seatmap-btn");
+  const seatmapNote = document.getElementById("f-seatmap-note");
+  const seatmapError = document.getElementById("f-seatmap-error");
+
+  let flightOffers = [];
+  let selectedOffer = null;
+  let seatmaps = []; // raw seatmap data to let agent choose seats
+  let passengerBlocks = []; // references to DOM & metadata
+
+  // SSR options – can be extended
+  const SSR_OPTIONS = [
+    { code: "VGML", label: "Vegetarian meal" },
+    { code: "CHML", label: "Child meal" },
+    { code: "GFML", label: "Gluten-free meal" },
+    { code: "WCHR", label: "Wheelchair to ramp" },
+    { code: "WCHS", label: "Wheelchair up/down steps" },
+    { code: "WCHC", label: "Wheelchair to seat" },
+    { code: "BLND", label: "Blind passenger" },
+    { code: "DEAF", label: "Deaf passenger" }
+  ];
+
+  fSearchBtn.addEventListener("click", async () => {
+    fError.textContent = "";
+    fResults.innerHTML = "";
+    fSuccess.textContent = "";
+    fBookError.textContent = "";
+    fConfirmation.textContent = "";
+    selectedOffer = null;
+    seatmaps = [];
+    seatmapNote.textContent = "Seat selections per pax will be populated below if available.";
+    seatmapError.textContent = "";
+
+    if (!fOrigin.value || !fDest.value || !fDep.value) {
+      fError.textContent = "Origin, destination, and departure date are required.";
+      return;
+    }
+
+    fSearchBtn.disabled = true;
+    fSearchBtn.textContent = "Searching...";
+
+    try {
+      const payload = {
+        originLocationCode: fOrigin.value.trim().toUpperCase(),
+        destinationLocationCode: fDest.value.trim().toUpperCase(),
+        departureDate: fDep.value,
+        returnDate: fRet.value || null,
+        adults: Number(fAdults.value || 1),
+        children: Number(fChildren.value || 0),
+        infants: Number(fInfants.value || 0),
+        travelClass: fCabin.value,
+        currencyCode: fCurr.value || "USD"
+      };
+
+      const res = await fetch("/api/amadeus/flights/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        fError.textContent = "Search failed. Check server logs.";
+        console.log("Flight search error:", data);
+        return;
+      }
+
+      flightOffers = data.flightOffers || [];
+      if (!flightOffers.length) {
+        fError.textContent = "No flights found.";
+        return;
+      }
+
+      renderFlightResults();
+    } catch (err) {
+      console.error(err);
+      fError.textContent = "Error calling flight search.";
+    } finally {
+      fSearchBtn.disabled = false;
+      fSearchBtn.textContent = "Search flights";
+    }
+  });
+
+  function renderFlightResults() {
+    fResults.innerHTML = "";
+    flightOffers.forEach((offer) => {
+      const seg = offer.segments?.[0] || {};
+      const wrap = document.createElement("div");
+      wrap.className = "result-item";
+
+      const left = document.createElement("div");
+      left.innerHTML = `
+        <div><strong>${seg.origin || "XXX"} → ${seg.destination || "YYY"}</strong></div>
+        <div class="muted">${seg.depTime || "–"} → ${seg.arrTime || "–"}</div>
+        <div class="muted">Flight: ${seg.flightNumber || ""} ${
+          seg.operatingCarrier ? "(Operated by " + seg.operatingCarrier + ")" : ""
+        }</div>
+      `;
+      const right = document.createElement("div");
+      const price = document.createElement("div");
+      price.className = "price";
+      price.textContent = `${offer.price?.currency || "USD"} ${offer.price?.total || "0.00"}`;
+      const btn = document.createElement("button");
+      btn.className = "btn-outline";
+      btn.textContent = "Select offer";
+      btn.addEventListener("click", () => {
+        selectedOffer = offer;
+        fSuccess.textContent = `Offer selected: ${seg.origin}→${seg.destination}, ${offer.price?.currency} ${offer.price?.total}`;
+      });
+      right.appendChild(price);
+      right.appendChild(btn);
+      wrap.appendChild(left);
+      wrap.appendChild(right);
+      fResults.appendChild(wrap);
+    });
+  }
+
+  // Build passenger form blocks
+  pBuildBtn.addEventListener("click", () => {
+    passengerContainer.innerHTML = "";
+    passengerBlocks = [];
+    const adt = Number(pAdults.value || 0);
+    const chd = Number(pChildren.value || 0);
+    const inf = Number(pInfants.value || 0);
+
+    let index = 1;
+    function addBlock(typeLabel, paxType) {
+      const wrap = document.createElement("div");
+      wrap.className = "passenger-block";
+      wrap.dataset.paxType = paxType;
+      wrap.innerHTML = `
+        <h4>${typeLabel} – Pax ${index}</h4>
+        <div class="grid-3">
+          <div class="field">
+            <label>First name</label>
+            <input name="firstName">
+          </div>
+          <div class="field">
+            <label>Last name</label>
+            <input name="lastName">
+          </div>
+          <div class="field">
+            <label>Date of birth</label>
+            <input name="dob" type="date">
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="field">
+            <label>Gender</label>
+            <select name="gender">
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="UNSPECIFIED" selected>Unspecified</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Nationality</label>
+            <input name="nationality" placeholder="US">
+          </div>
+          <div class="field">
+            <label>Email (lead only, optional)</label>
+            <input name="email" placeholder="only needed for lead">
+          </div>
+        </div>
+        <h4>Passport (APIS)</h4>
+        <div class="grid-3">
+          <div class="field">
+            <label>Passport number</label>
+            <input name="passportNumber">
+          </div>
+          <div class="field">
+            <label>Issuing country</label>
+            <input name="passportCountry" placeholder="US">
+          </div>
+          <div class="field">
+            <label>Expiry date</label>
+            <input name="passportExpiry" type="date">
+          </div>
+        </div>
+        <h4>SSR (Special Service Requests)</h4>
+        <div class="small-inputs" data-ssr-container></div>
+        <h4>Seat selections (per segment)</h4>
+        <div class="small-inputs" data-seat-container></div>
+      `;
+      passengerContainer.appendChild(wrap);
+      passengerBlocks.push(wrap);
+      index++;
+    }
+
+    for (let i = 0; i < adt; i++) addBlock("Adult", "ADT");
+    for (let i = 0; i < chd; i++) addBlock("Child", "CHD");
+    for (let i = 0; i < inf; i++) addBlock("Infant", "INF");
+
+    // Populate SSR checkboxes
+    passengerBlocks.forEach((wrap) => {
+      const ssrContainer = wrap.querySelector("[data-ssr-container]");
+      SSR_OPTIONS.forEach((opt) => {
+        const label = document.createElement("label");
+        label.style.fontSize = "11px";
+        label.style.display = "inline-flex";
+        label.style.alignItems = "center";
+        label.style.gap = "4px";
+        label.style.marginRight = "8px";
+        label.innerHTML = `<input type="checkbox" value="${opt.code}" style="width:auto;"> ${opt.code} – ${opt.label}`;
+        ssrContainer.appendChild(label);
+      });
+    });
+
+    // Seat containers are filled after seatmap load
+  });
+
+  // Load seatmaps and create seat dropdowns for each pax + each segment
+  seatmapBtn.addEventListener("click", async () => {
+    seatmapError.textContent = "";
+    seatmaps = [];
+    if (!selectedOffer) {
+      seatmapError.textContent = "Select an offer first.";
+      return;
+    }
+    seatmapBtn.disabled = true;
+    seatmapBtn.textContent = "Loading seatmaps...";
+
+    try {
+      const res = await fetch("/api/amadeus/flights/seatmaps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offer: selectedOffer })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        seatmapError.textContent = "Seatmap load failed.";
+        console.log("Seatmap error:", data);
+        return;
+      }
+      seatmaps = data.seatmaps || [];
+      buildSeatSelectors();
+      seatmapNote.textContent =
+        "Seat dropdowns created per passenger per segment (simple list from seatmap).";
+    } catch (err) {
+      console.error(err);
+      seatmapError.textContent = "Error calling seatmaps endpoint.";
+    } finally {
+      seatmapBtn.disabled = false;
+      seatmapBtn.textContent = "Load seatmaps";
+    }
+  });
+
+  function buildSeatSelectors() {
+    // Simplified: take first seatmap, gather available seat numbers
+    if (!seatmaps.length || !seatmaps[0].decks?.length) return;
+    const deck = seatmaps[0].decks[0];
+    const seats = [];
+    if (deck.sections) {
+      deck.sections.forEach((sec) => {
+        (sec.elements || []).forEach((el) => {
+          if (el.type === "SEAT" && el.properties?.seatNumber) {
+            seats.push(el.properties.seatNumber);
+          }
+        });
+      });
+    }
+
+    passengerBlocks.forEach((wrap) => {
+      const seatContainer = wrap.querySelector("[data-seat-container]");
+      seatContainer.innerHTML = "";
+      // For simplicity we treat entire journey as 1 "segment"
+      const label = document.createElement("label");
+      label.style.fontSize = "11px";
+      label.innerText = "Seat (segment 1)";
+      const select = document.createElement("select");
+      select.name = "seatSegment0";
+      const emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = "No preference";
+      select.appendChild(emptyOpt);
+      seats.slice(0, 40).forEach((sn) => {
+        const opt = document.createElement("option");
+        opt.value = sn;
+        opt.textContent = sn;
+        select.appendChild(opt);
+      });
+      seatContainer.appendChild(label);
+      seatContainer.appendChild(select);
+    });
+  }
+
+  // Booking
+  fBookBtn.addEventListener("click", async () => {
+    fSuccess.textContent = "";
+    fBookError.textContent = "";
+    fConfirmation.textContent = "";
+
+    if (!selectedOffer) {
+      fBookError.textContent = "Select a flight offer first.";
+      return;
+    }
+    if (!passengerBlocks.length) {
+      fBookError.textContent = "Build and fill passenger form first.";
+      return;
+    }
+
+    const passengers = [];
+    let leadIndex = 0;
+
+    passengerBlocks.forEach((wrap, idx) => {
+      const get = (name) =>
+        (wrap.querySelector(`input[name="${name}"]`) ||
+          wrap.querySelector(`select[name="${name}"]`))?.value || "";
+      const firstName = wrap.querySelector('input[name="firstName"]').value.trim();
+      const lastName = wrap.querySelector('input[name="lastName"]').value.trim();
+      const dob = wrap.querySelector('input[name="dob"]').value;
+      const gender = wrap.querySelector('select[name="gender"]').value;
+      const nationality = wrap.querySelector('input[name="nationality"]').value.trim();
+      const email = wrap.querySelector('input[name="email"]').value.trim();
+      const passportNumber = wrap.querySelector('input[name="passportNumber"]').value.trim();
+      const passportCountry = wrap.querySelector('input[name="passportCountry"]').value.trim();
+      const passportExpiry = wrap.querySelector('input[name="passportExpiry"]').value;
+      const paxType = wrap.dataset.paxType || "ADT";
+
+      if (!firstName || !lastName || !dob || !passportNumber || !passportExpiry) {
+        fBookError.textContent = "All passengers require name, DOB & passport details.";
+        throw new Error("Validation error");
+      }
+
+      const ssrs = Array.from(
+        wrap.querySelectorAll('[data-ssr-container] input[type="checkbox"]:checked')
+      ).map((cb) => cb.value);
+
+      const seatSelections = [];
+      const seatSelect = wrap.querySelector('select[name="seatSegment0"]');
+      if (seatSelect && seatSelect.value) {
+        seatSelections.push({
+          segmentIndex: 0,
+          seatNumber: seatSelect.value
+        });
+      }
+
+      passengers.push({
+        firstName,
+        lastName,
+        dob,
+        gender,
+        nationality,
+        email,
+        passportNumber,
+        passportCountry,
+        passportExpiry,
+        paxType,
+        ssrs,
+        seatSelections
+      });
+
+      if (email && !contactEmail.value) {
+        leadIndex = idx;
+      }
+    });
+
+    const leadPassenger = passengers[leadIndex];
+    const finalLeadEmail = contactEmail.value.trim() || leadPassenger.email;
+    if (!finalLeadEmail) {
+      fBookError.textContent = "At least one passenger or contact must have an email.";
+      return;
+    }
+
+    fBookBtn.disabled = true;
+    fBookBtn.textContent = "Booking & emailing PDF...";
+
+    try {
+      const payload = {
+        offer: selectedOffer,
+        passengers,
+        leadIndex,
+        contact: {
+          firstName: leadPassenger.firstName,
+          lastName: leadPassenger.lastName,
+          email: finalLeadEmail,
+          phones: contactPhone.value
+            ? [
+                {
+                  deviceType: "MOBILE",
+                  countryCallingCode: "1",
+                  number: contactPhone.value.replace(/\D/g, "").slice(-10) || "0000000000"
+                }
+              ]
+            : []
+        }
+      };
+
+      const res = await fetch("/api/amadeus/flights/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        fBookError.textContent = "Booking failed. Check server logs.";
+        console.log("Book error:", data);
+        return;
+      }
+
+      fSuccess.textContent =
+        "Booking created. PDF itinerary emailed to lead passenger.";
+      fConfirmation.textContent = `PNR: ${data.pnr || "TBD"} | Order ID: ${
+        data.orderId || "TBD"
+      } | Pax: ${data.passengers
+        .map((p) => `${p.firstName} ${p.lastName}`)
+        .join(", ")}`;
+    } catch (err) {
+      if (err.message === "Validation error") return;
+      console.error(err);
+      fBookError.textContent = "Error calling booking endpoint.";
+    } finally {
+      fBookBtn.disabled = false;
+      fBookBtn.textContent = "Book flight(s) & email PDF";
+    }
+  });
+
+  // ---------- HOTELS ----------
+  const hCity = document.getElementById("h-city");
+  const hCheckin = document.getElementById("h-checkin");
+  const hCheckout = document.getElementById("h-checkout");
+  const hAdults = document.getElementById("h-adults");
+  const hRooms = document.getElementById("h-rooms");
+  const hCurrency = document.getElementById("h-currency");
+
+  const hSearchBtn = document.getElementById("h-search-btn");
+  const hError = document.getElementById("h-error");
+  const hResults = document.getElementById("h-results");
+  const hBookBtn = document.getElementById("h-book-btn");
+  const hSuccess = document.getElementById("h-success");
+  const hBookError = document.getElementById("h-book-error");
+  const hConfirmation = document.getElementById("h-confirmation");
+
+  const hGuestName = document.getElementById("h-guest-name");
+  const hGuestEmail = document.getElementById("h-guest-email");
+  const hCardMask = document.getElementById("h-card-mask");
+
+  let hotelOffers = [];
+  let selectedHotelOffer = null;
+
+  hSearchBtn.addEventListener("click", async () => {
+    hError.textContent = "";
+    hResults.innerHTML = "";
+    hSuccess.textContent = "";
+    hBookError.textContent = "";
+    hConfirmation.textContent = "";
+    selectedHotelOffer = null;
+
+    if (!hCity.value || !hCheckin.value || !hCheckout.value) {
+      hError.textContent = "City, check-in, and check-out are required.";
+      return;
+    }
+
+    hSearchBtn.disabled = true;
+    hSearchBtn.textContent = "Searching...";
+
+    try {
+      const payload = {
+        cityCode: hCity.value.trim().toUpperCase(),
+        checkInDate: hCheckin.value,
+        checkOutDate: hCheckout.value,
+        adults: Number(hAdults.value || 2),
+        roomQuantity: Number(hRooms.value || 1),
+        currencyCode: hCurrency.value || "USD"
+      };
+
+      const res = await fetch("/api/amadeus/hotels/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        hError.textContent = "Hotel search failed.";
+        console.log("Hotel search error:", data);
+        return;
+      }
+
+      hotelOffers = data.hotels || [];
+      if (!hotelOffers.length) {
+        hError.textContent = "No hotels found.";
+        return;
+      }
+
+      renderHotelResults();
+    } catch (err) {
+      console.error(err);
+      hError.textContent = "Error calling hotel search.";
+    } finally {
+      hSearchBtn.disabled = false;
+      hSearchBtn.textContent = "Search hotels";
+    }
+  });
+
+  function renderHotelResults() {
+    hResults.innerHTML = "";
+    hotelOffers.forEach((h) => {
+      const wrap = document.createElement("div");
+      wrap.className = "result-item";
+
+      const left = document.createElement("div");
+      left.innerHTML = `
+        <div><strong>${h.name || "Hotel"}</strong> (${h.cityCode})</div>
+        <div class="muted">${(h.address?.lines || []).join(", ")}</div>
+        <div class="muted">${h.checkInDate} → ${h.checkOutDate}</div>
+      `;
+      const right = document.createElement("div");
+      const price = document.createElement("div");
+      price.className = "price";
+      price.textContent = `${h.price?.currency || "USD"} ${h.price?.total || "0.00"}`;
+      const btn = document.createElement("button");
+      btn.className = "btn-outline";
+      btn.textContent = "Select";
+      btn.addEventListener("click", () => {
+        selectedHotelOffer = h;
+        hSuccess.textContent = `Hotel selected: ${h.name}, ${h.price?.currency} ${h.price?.total}`;
+      });
+      right.appendChild(price);
+      right.appendChild(btn);
+
+      wrap.appendChild(left);
+      wrap.appendChild(right);
+      hResults.appendChild(wrap);
+    });
+  }
+
+  hBookBtn.addEventListener("click", async () => {
+    hSuccess.textContent = "";
+    hBookError.textContent = "";
+    hConfirmation.textContent = "";
+
+    if (!selectedHotelOffer) {
+      hBookError.textContent = "Select a hotel first.";
+      return;
+    }
+    if (!hGuestName.value || !hGuestEmail.value) {
+      hBookError.textContent = "Guest name and email are required.";
+      return;
+    }
+
+    hBookBtn.disabled = true;
+    hBookBtn.textContent = "Booking...";
+
+    try {
+      const guests = [
+        {
+          name: { fullName: hGuestName.value.trim() },
+          contact: {
+            phone: "0000000000",
+            email: hGuestEmail.value.trim()
+          }
+        }
+      ];
+
+      const payments = [
+        {
+          method: "CREDIT_CARD",
+          card: {
+            vendorCode: "VI",
+            cardNumber: "4111111111111111",
+            expiryDate: "2030-01",
+            holderName: hGuestName.value.trim()
+          }
+        }
+      ];
+
+      const payload = {
+        hotel: selectedHotelOffer,
+        guests,
+        payments
+      };
+
+      const res = await fetch("/api/amadeus/hotels/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        hBookError.textContent = "Hotel booking failed. Check server logs.";
+        console.log("Hotel book error:", data);
+        return;
+      }
+
+      hSuccess.textContent = "Hotel booked successfully.";
+      hConfirmation.textContent = `Confirmation IDs: ${
+        (data.confirmationNumbers || []).join(", ") || "N/A"
+      }`;
+    } catch (err) {
+      console.error(err);
+      hBookError.textContent = "Error calling hotel booking.";
+    } finally {
+      hBookBtn.disabled = false;
+      hBookBtn.textContent = "Book selected hotel";
+    }
+  });
+</script>
+</body>
+</html>
