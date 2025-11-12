@@ -147,6 +147,81 @@ app.post("/api/email/itinerary", async (req, res) => {
   }
 });
 
+// === LIVE HOTEL & ACTIVITY CARDS FOR SKANDI FRONTEND ===
+import fetch from "node-fetch";
+
+// Reuse your Amadeus credentials
+let accessToken = null;
+let tokenExpiry = 0;
+
+async function refreshAmadeusToken() {
+  const now = Date.now();
+  if (accessToken && now < tokenExpiry) return accessToken;
+
+  const res = await fetch("https://test.api.amadeus.com/v1/security/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: process.env.AMADEUS_CLIENT_ID,
+      client_secret: process.env.AMADEUS_CLIENT_SECRET
+    })
+  });
+  const data = await res.json();
+  accessToken = data.access_token;
+  tokenExpiry = now + data.expires_in * 1000 - 60000;
+  return accessToken;
+}
+
+// ✅ Fetch live hotels
+app.get("/api/amadeus/hotels", async (req, res) => {
+  try {
+    const token = await refreshAmadeusToken();
+    const city = req.query.city || "ATH";
+    const response = await fetch(`https://test.api.amadeus.com/v3/shopping/hotel-offers?cityCode=${city}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    res.json(data.data || []);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load hotels" });
+  }
+});
+
+// ✅ Fetch excursions / activities
+app.get("/api/amadeus/activities", async (req, res) => {
+  try {
+    const token = await refreshAmadeusToken();
+    const lat = req.query.lat || "37.9838"; // Athens default
+    const lon = req.query.lon || "23.7275";
+    const response = await fetch(`https://test.api.amadeus.com/v1/shopping/activities?latitude=${lat}&longitude=${lon}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    res.json(data.data || []);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load activities" });
+  }
+});
+
+// ✅ Fetch destination inspiration
+app.get("/api/amadeus/destinations", async (req, res) => {
+  try {
+    const token = await refreshAmadeusToken();
+    const origin = req.query.origin || "ARN";
+    const response = await fetch(`https://test.api.amadeus.com/v1/travel/recommendations?originLocationCode=${origin}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    res.json(data.data || []);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load destinations" });
+  }
+});
+
 app.listen(PORT, () =>
   console.log(`✅ SKANDI Amadeus server running on http://localhost:${PORT}`)
 );
