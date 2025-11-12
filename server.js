@@ -1,220 +1,152 @@
+console.log("Booting SKANDI server...");
+
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
+import cors from "cors";
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
-import bodyParser from "body-parser";
+import fetch from "node-fetch";
 import Stripe from "stripe";
-import fs from "fs";
-import path from "path";
+import { generateItineraryPdf } from "./templates/itinerary.js";
 
 dotenv.config();
-
 const app = express();
+app.use(express.json({ limit: "2mb" }));
 app.use(cors());
-app.use(express.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static("public"));
+const PORT = process.env.PORT || 4000;
 
-// -----------------------------
-// ENVIRONMENT VARIABLES
-// -----------------------------
-const {
-  PORT,
-  AMADEUS_CLIENT_ID,
-  AMADEUS_CLIENT_SECRET,
-  AMADEUS_ENV,
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  EMAIL_FROM,
-  STRIPE_SECRET_KEY,
-} = process.env;
-
-const stripe = new Stripe(STRIPE_SECRET_KEY);
+const STRIPE = new Stripe(process.env.STRIPE_SECRET_KEY);
 const AMADEUS_BASE =
-  AMADEUS_ENV === "production"
+  process.env.AMADEUS_ENV === "production"
     ? "https://api.amadeus.com"
     : "https://test.api.amadeus.com";
 
-// -----------------------------
-// AMADEUS TOKEN HANDLER
-// -----------------------------
-let amadeusToken = null;
-async function getAmadeusToken() {
-  if (amadeusToken) return amadeusToken;
+// TOKEN CACHE
+let tokenCache = { access_token: null, expires_at: 0 };
+async function getToken() {
+  const now = Date.now();
+  if (tokenCache.access_token && now < tokenCache.expires_at - 60000)
+    return tokenCache.access_token;
+
+  const params = new URLSearchParams();
+  params.set("grant_type", "client_credentials");
+  params.set("client_id", process.env.AMADEUS_CLIENT_ID);
+  params.set("client_secret", process.env.AMADEUS_CLIENT_SECRET);
+
   const res = await fetch(`${AMADEUS_BASE}/v1/security/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: AMADEUS_CLIENT_ID,
-      client_secret: AMADEUS_CLIENT_SECRET,
-    }),
+    body: params.toString()
   });
   const data = await res.json();
-  amadeusToken = data.access_token;
-  setTimeout(() => (amadeusToken = null), 14 * 60 * 1000); // refresh every 14 min
-  return amadeusToken;
+  tokenCache = {
+    access_token: data.access_token,
+    expires_at: Date.now() + data.expires_in * 1000
+  };
+  return data.access_token;
 }
 
-// -----------------------------
-// FLIGHT SEARCH
-// -----------------------------
+// SMTP
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+// ========================= FLIGHT SEARCH =========================
 app.post("/api/amadeus/flights/search", async (req, res) => {
   try {
-    const token = await getAmadeusToken();
-    const { origin, destination, departureDate, returnDate, adults } = req.body;
-
-    const url = `${AMADEUS_BASE}/v2/shopping/flight-offers?originLocationCode=${origin}&destinationLocationCode=${destination}&departureDate=${departureDate}&returnDate=${returnDate}&adults=${adults}&nonStop=false&max=10&currencyCode=USD`;
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+    const token = await getToken();
+    const p = req.body;
+    const params = new URLSearchParams({
+      originLocationCode: p.origin,
+      destinationLocationCode: p.destination,
+      departureDate: p.departureDate,
+      adults: p.adults || 1,
+      max: "10"
     });
-    const data = await response.json();
-    res.json(data.data || []);
-  } catch (err) {
-    console.error("Flight search error:", err);
-    res.status(500).json({ error: "Flight search failed" });
+    if (p.returnDate) params.set("returnDate", p.returnDate);
+
+    const amadeusRes = await fetch(
+      `${AMADEUS_BASE}/v2/shopping/flight-offers?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await amadeusRes.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// -----------------------------
-// HOTEL SEARCH
-// -----------------------------
+// ========================= HOTEL SEARCH =========================
 app.post("/api/amadeus/hotels/search", async (req, res) => {
   try {
-    const token = await getAmadeusToken();
-    const { cityCode, checkInDate, checkOutDate, adults } = req.body;
-
-    const url = `${AMADEUS_BASE}/v1/reference-data/locations/hotels/by-city?cityCode=${cityCode}&adults=${adults}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`;
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+    const token = await getToken();
+    const { cityCode, checkInDate, checkOutDate } = req.body;
+    const params = new URLSearchParams({
+      cityCode,
+      checkInDate,
+      checkOutDate,
+      adults: "2"
     });
-    const data = await response.json();
-    res.json(data.data || []);
-  } catch (err) {
-    console.error("Hotel search error:", err);
-    res.status(500).json({ error: "Hotel search failed" });
+    const amadeusRes = await fetch(
+      `${AMADEUS_BASE}/v2/shopping/hotel-offers?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await amadeusRes.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// -----------------------------
-// CHARTER MOCK SEARCH
-// -----------------------------
-app.post("/api/charter/search", (req, res) => {
-  const { origin, destination, departureDate, returnDate } = req.body;
-  const dummy = [
-    {
-      id: "SKD001",
-      origin,
-      destination,
-      departureDate,
-      returnDate,
-      aircraft: "Boeing 737-800",
-      seats: 186,
-      price: 4800,
-      airline: "SKANDI Charter",
-    },
-  ];
-  res.json(dummy);
-});
-
-// -----------------------------
-// STRIPE CHECKOUT
-// -----------------------------
+// ========================= STRIPE CHECKOUT =========================
 app.post("/api/stripe/checkout", async (req, res) => {
   try {
-    const { totalPrice, passengerInfo, flightDetails } = req.body;
-
-    const session = await stripe.checkout.sessions.create({
+    const session = await STRIPE.checkout.sessions.create({
       payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: `SKANDI Booking: ${flightDetails?.origin} → ${flightDetails?.destination}`,
-            },
-            unit_amount: Math.round(totalPrice * 100),
-          },
-          quantity: 1,
-        },
-      ],
       mode: "payment",
-      success_url: "https://skandigroup.wixstudio.com/confirmation?status=success",
-      cancel_url: "https://skandigroup.wixstudio.com/booking?status=cancelled",
+      line_items: req.body.items.map(item => ({
+        price_data: {
+          currency: "usd",
+          product_data: { name: item.name },
+          unit_amount: Math.round(item.price * 100)
+        },
+        quantity: item.quantity
+      })),
+      success_url: `${req.headers.origin}/success.html`,
+      cancel_url: `${req.headers.origin}/cancel.html`
     });
-
     res.json({ url: session.url });
   } catch (err) {
-    console.error("Stripe checkout error:", err);
-    res.status(500).json({ error: "Payment failed" });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// -----------------------------
-// PDF ITINERARY GENERATOR
-// -----------------------------
-app.post("/api/pdf/itinerary", async (req, res) => {
+// ========================= EMAIL / PDF =========================
+app.post("/api/email/itinerary", async (req, res) => {
   try {
-    const { name, flight, price } = req.body;
-    const doc = new PDFDocument();
-    const filename = `itinerary_${Date.now()}.pdf`;
-    const filepath = path.join("public", filename);
-    doc.pipe(fs.createWriteStream(filepath));
-
-    doc.fontSize(22).text("SKANDI Travels Itinerary", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(14).text(`Passenger: ${name}`);
-    doc.text(`Route: ${flight.origin} → ${flight.destination}`);
-    doc.text(`Departure: ${flight.departureDate}`);
-    doc.text(`Return: ${flight.returnDate}`);
-    doc.text(`Price: $${price} USD`);
-    doc.moveDown();
-    doc.text("Thank you for booking with SKANDI Travels!");
-    doc.end();
-
-    res.json({ url: `https://skandi-amadeus.onrender.com/${filename}` });
-  } catch (err) {
-    console.error("PDF creation error:", err);
-    res.status(500).json({ error: "Could not generate PDF" });
-  }
-});
-
-// -----------------------------
-// EMAIL CONFIRMATION
-// -----------------------------
-app.post("/api/email/confirmation", async (req, res) => {
-  try {
-    const { email, name, itineraryUrl } = req.body;
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: false,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
+    const { to, booking } = req.body;
+    const pdf = await generateItineraryPdf(booking);
 
     await transporter.sendMail({
-      from: EMAIL_FROM,
-      to: email,
-      subject: "Your SKANDI Travels Booking Confirmation",
-      html: `<h2>Hello ${name},</h2>
-      <p>Thank you for booking with SKANDI Travels.</p>
-      <p>Your itinerary is available here:</p>
-      <a href="${itineraryUrl}">${itineraryUrl}</a>`,
+      from: process.env.EMAIL_FROM,
+      to,
+      subject: `Your SKANDI Travels Itinerary`,
+      text: "Attached is your itinerary.",
+      attachments: [{ filename: "itinerary.pdf", content: pdf }]
     });
-
     res.json({ success: true });
-  } catch (err) {
-    console.error("Email error:", err);
-    res.status(500).json({ error: "Email failed" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// -----------------------------
-app.listen(PORT || 4000, () =>
-  console.log(`SKANDI Amadeus server running on http://localhost:${PORT || 4000}`)
+app.listen(PORT, () =>
+  console.log(`✅ SKANDI Amadeus server running on http://localhost:${PORT}`)
 );
