@@ -1,351 +1,220 @@
-// ===========================================
-// SKANDI Amadeus Server
-// ===========================================
-
-console.log("Booting SKANDI server...");
-
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
+import dotenv from "dotenv";
+import fetch from "node-fetch";
 import nodemailer from "nodemailer";
-import { generateItineraryPdf } from "./templates/itinerary.js";
+import PDFDocument from "pdfkit";
+import bodyParser from "body-parser";
+import Stripe from "stripe";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
 app.use(cors());
-app.use(express.static("public"));
+app.use(express.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-const PORT = process.env.PORT || 4000;
+// -----------------------------
+// ENVIRONMENT VARIABLES
+// -----------------------------
+const {
+  PORT,
+  AMADEUS_CLIENT_ID,
+  AMADEUS_CLIENT_SECRET,
+  AMADEUS_ENV,
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_USER,
+  SMTP_PASS,
+  EMAIL_FROM,
+  STRIPE_SECRET_KEY,
+} = process.env;
 
-// ===========================================
-// AMADEUS CONFIGURATION
-// ===========================================
-const AMADEUS_CLIENT_ID = process.env.AMADEUS_CLIENT_ID;
-const AMADEUS_CLIENT_SECRET = process.env.AMADEUS_CLIENT_SECRET;
-const AMADEUS_ENV = process.env.AMADEUS_ENV || "test";
-
+const stripe = new Stripe(STRIPE_SECRET_KEY);
 const AMADEUS_BASE =
   AMADEUS_ENV === "production"
     ? "https://api.amadeus.com"
     : "https://test.api.amadeus.com";
 
-let tokenCache = {
-  access_token: null,
-  expires_at: 0,
-};
-
-// ===========================================
-// FETCH ACCESS TOKEN
-// ===========================================
-async function getAccessToken() {
-  const now = Date.now();
-  if (tokenCache.access_token && now < tokenCache.expires_at - 60000) {
-    return tokenCache.access_token;
-  }
-  const params = new URLSearchParams();
-  params.set("grant_type", "client_credentials");
-  params.set("client_id", AMADEUS_CLIENT_ID);
-  params.set("client_secret", AMADEUS_CLIENT_SECRET);
-
+// -----------------------------
+// AMADEUS TOKEN HANDLER
+// -----------------------------
+let amadeusToken = null;
+async function getAmadeusToken() {
+  if (amadeusToken) return amadeusToken;
   const res = await fetch(`${AMADEUS_BASE}/v1/security/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: AMADEUS_CLIENT_ID,
+      client_secret: AMADEUS_CLIENT_SECRET,
+    }),
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Token error:", text);
-    throw new Error(`Amadeus token error ${res.status}`);
-  }
-
   const data = await res.json();
-  tokenCache.access_token = data.access_token;
-  tokenCache.expires_at = Date.now() + data.expires_in * 1000;
-  return tokenCache.access_token;
+  amadeusToken = data.access_token;
+  setTimeout(() => (amadeusToken = null), 14 * 60 * 1000); // refresh every 14 min
+  return amadeusToken;
 }
 
-// ===========================================
-// SMTP / EMAIL CONFIGURATION
-// ===========================================
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-// ===========================================
-// HELPER FUNCTIONS
-// ===========================================
-function buildAmadeusTravelers(frontendPassengers) {
-  return frontendPassengers.map((p, idx) => ({
-    id: String(idx + 1),
-    dateOfBirth: p.dob || "1990-01-01",
-    gender: p.gender || "UNSPECIFIED",
-    name: {
-      firstName: (p.firstName || "").toUpperCase(),
-      lastName: (p.lastName || "").toUpperCase(),
-    },
-    contact: p.email ? { emailAddress: p.email } : undefined,
-    documents: [
-      {
-        documentType: "PASSPORT",
-        number: p.passportNumber || "TBD",
-        expiryDate: p.passportExpiry || "2030-01-01",
-        nationality: p.nationality || "US",
-        holder: true,
-        issuanceCountry: p.passportCountry || p.nationality || "US",
-      },
-    ],
-  }));
-}
-
-function buildSsrRemarks(frontendPassengers) {
-  const lines = [];
-  frontendPassengers.forEach((p, idx) => {
-    if (Array.isArray(p.ssrs) && p.ssrs.length) {
-      const paxLabel = `${(p.firstName || "").toUpperCase()} ${(p.lastName || "").toUpperCase()}`;
-      const codes = p.ssrs.join(", ");
-      lines.push(`SSR for PAX ${idx + 1} (${paxLabel}): ${codes}`);
-    }
-  });
-  return lines;
-}
-
-function buildSeatRemarks(seatSelections) {
-  if (!Array.isArray(seatSelections)) return [];
-  return seatSelections.map(
-    (s) => `Seat selection: PAX ${s.travelerId} – Segment ${s.segmentIndex} – Seat ${s.seatNumber}`
-  );
-}
-
-// ===========================================
-// ROUTES: FLIGHT SEARCH
-// ===========================================
+// -----------------------------
+// FLIGHT SEARCH
+// -----------------------------
 app.post("/api/amadeus/flights/search", async (req, res) => {
   try {
-    const token = await getAccessToken();
-    const {
-      originLocationCode,
-      destinationLocationCode,
-      departureDate,
-      returnDate,
-      adults,
-      children,
-      infants,
-      travelClass,
-      currencyCode,
-    } = req.body;
+    const token = await getAmadeusToken();
+    const { origin, destination, departureDate, returnDate, adults } = req.body;
 
-    const params = new URLSearchParams();
-    params.set("originLocationCode", originLocationCode);
-    params.set("destinationLocationCode", destinationLocationCode);
-    params.set("departureDate", departureDate);
-    if (returnDate) params.set("returnDate", returnDate);
-    params.set("adults", adults || 1);
-    if (children && Number(children) > 0) params.set("children", children);
-    if (infants && Number(infants) > 0) params.set("infants", infants);
-    if (travelClass) params.set("travelClass", travelClass);
-    if (currencyCode) params.set("currencyCode", currencyCode);
-    params.set("max", "20");
+    const url = `${AMADEUS_BASE}/v2/shopping/flight-offers?originLocationCode=${origin}&destinationLocationCode=${destination}&departureDate=${departureDate}&returnDate=${returnDate}&adults=${adults}&nonStop=false&max=10&currencyCode=USD`;
 
-    const amadeusRes = await fetch(
-      `${AMADEUS_BASE}/v2/shopping/flight-offers?${params.toString()}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    const data = await amadeusRes.json();
-    if (!amadeusRes.ok) {
-      console.error("Flight search error:", data);
-      return res.status(amadeusRes.status).json(data);
-    }
-
-    const normalizedOffers = (data.data || []).map((offer) => {
-      const it = offer.itineraries?.[0];
-      const seg = it?.segments?.[0];
-      const lastSeg = it?.segments?.[it.segments.length - 1];
-      return {
-        id: offer.id,
-        raw: offer,
-        price: {
-          currency: offer.price?.currency,
-          total: offer.price?.grandTotal || offer.price?.total,
-        },
-        cabin:
-          offer.travelerPricings?.[0]?.fareDetailsBySegment?.[0]?.cabin ||
-          travelClass,
-        itineraries: offer.itineraries,
-        segments: [
-          {
-            origin: seg?.departure?.iataCode,
-            destination: lastSeg?.arrival?.iataCode,
-            depTime: seg?.departure?.at,
-            arrTime: lastSeg?.arrival?.at,
-            carrier: seg?.carrierCode,
-            operatingCarrier: seg?.operating?.carrierCode,
-            flightNumber: `${seg?.carrierCode}${seg?.number}`,
-          },
-        ],
-      };
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
     });
-
-    res.json({ flightOffers: normalizedOffers, raw: data });
+    const data = await response.json();
+    res.json(data.data || []);
   } catch (err) {
-    console.error("Flight search exception:", err);
-    res.status(500).json({ error: "Server error on flight search" });
+    console.error("Flight search error:", err);
+    res.status(500).json({ error: "Flight search failed" });
   }
 });
 
-// ===========================================
-// ROUTES: HOTEL SEARCH
-// ===========================================
+// -----------------------------
+// HOTEL SEARCH
+// -----------------------------
 app.post("/api/amadeus/hotels/search", async (req, res) => {
   try {
-    const token = await getAccessToken();
-    const { cityCode, checkInDate, checkOutDate, adults, roomQuantity, currencyCode } = req.body;
+    const token = await getAmadeusToken();
+    const { cityCode, checkInDate, checkOutDate, adults } = req.body;
 
-    const params = new URLSearchParams();
-    params.set("cityCode", cityCode);
-    params.set("checkInDate", checkInDate);
-    params.set("checkOutDate", checkOutDate);
-    params.set("adults", adults || 2);
-    if (roomQuantity) params.set("roomQuantity", roomQuantity);
-    if (currencyCode) params.set("currency", currencyCode);
-    params.set("bestRateOnly", "true");
+    const url = `${AMADEUS_BASE}/v1/reference-data/locations/hotels/by-city?cityCode=${cityCode}&adults=${adults}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}`;
 
-    const amadeusRes = await fetch(
-      `${AMADEUS_BASE}/v2/shopping/hotel-offers?${params.toString()}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json();
+    res.json(data.data || []);
+  } catch (err) {
+    console.error("Hotel search error:", err);
+    res.status(500).json({ error: "Hotel search failed" });
+  }
+});
 
-    const data = await amadeusRes.json();
-    if (!amadeusRes.ok) {
-      console.error("Hotel search error:", data);
-      return res.status(amadeusRes.status).json(data);
-    }
+// -----------------------------
+// CHARTER MOCK SEARCH
+// -----------------------------
+app.post("/api/charter/search", (req, res) => {
+  const { origin, destination, departureDate, returnDate } = req.body;
+  const dummy = [
+    {
+      id: "SKD001",
+      origin,
+      destination,
+      departureDate,
+      returnDate,
+      aircraft: "Boeing 737-800",
+      seats: 186,
+      price: 4800,
+      airline: "SKANDI Charter",
+    },
+  ];
+  res.json(dummy);
+});
 
-    const normalized = (data.data || []).map((h) => {
-      const offer = h.offers?.[0];
-      return {
-        hotelId: h.hotel?.hotelId,
-        name: h.hotel?.name,
-        cityCode: h.hotel?.cityCode,
-        address: h.hotel?.address,
-        offerId: offer?.id,
-        price: {
-          currency: offer?.price?.currency,
-          total: offer?.price?.total,
+// -----------------------------
+// STRIPE CHECKOUT
+// -----------------------------
+app.post("/api/stripe/checkout", async (req, res) => {
+  try {
+    const { totalPrice, passengerInfo, flightDetails } = req.body;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `SKANDI Booking: ${flightDetails?.origin} → ${flightDetails?.destination}`,
+            },
+            unit_amount: Math.round(totalPrice * 100),
+          },
+          quantity: 1,
         },
-        checkInDate: offer?.checkInDate,
-        checkOutDate: offer?.checkOutDate,
-        room: offer?.room,
-        boardType: offer?.boardType,
-        raw: h,
-      };
+      ],
+      mode: "payment",
+      success_url: "https://skandigroup.wixstudio.com/confirmation?status=success",
+      cancel_url: "https://skandigroup.wixstudio.com/booking?status=cancelled",
     });
 
-    res.json({ hotels: normalized, raw: data });
+    res.json({ url: session.url });
   } catch (err) {
-    console.error("Hotel search exception:", err);
-    res.status(500).json({ error: "Server error on hotel search" });
+    console.error("Stripe checkout error:", err);
+    res.status(500).json({ error: "Payment failed" });
   }
 });
 
 // -----------------------------
-// Airport / City autocomplete
+// PDF ITINERARY GENERATOR
 // -----------------------------
-app.get("/api/amadeus/airports", async (req, res) => {
+app.post("/api/pdf/itinerary", async (req, res) => {
   try {
-    const q = (req.query.q || "").trim();
-    if (!q || q.length < 2) {
-      return res.json({ locations: [] });
-    }
-    const token = await getAccessToken();
+    const { name, flight, price } = req.body;
+    const doc = new PDFDocument();
+    const filename = `itinerary_${Date.now()}.pdf`;
+    const filepath = path.join("public", filename);
+    doc.pipe(fs.createWriteStream(filepath));
 
-    const params = new URLSearchParams();
-    params.set("keyword", q);
-    params.set("subType", "AIRPORT,CITY");
-    params.set("page[limit]", "10");
+    doc.fontSize(22).text("SKANDI Travels Itinerary", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(14).text(`Passenger: ${name}`);
+    doc.text(`Route: ${flight.origin} → ${flight.destination}`);
+    doc.text(`Departure: ${flight.departureDate}`);
+    doc.text(`Return: ${flight.returnDate}`);
+    doc.text(`Price: $${price} USD`);
+    doc.moveDown();
+    doc.text("Thank you for booking with SKANDI Travels!");
+    doc.end();
 
-    const amadeusRes = await fetch(
-      `${AMADEUS_BASE}/v1/reference-data/locations?${params.toString()}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-
-    const data = await amadeusRes.json();
-    if (!amadeusRes.ok) {
-      console.error("Locations error:", data);
-      return res.status(amadeusRes.status).json(data);
-    }
-
-    const locations = (data.data || []).map((loc) => ({
-      iataCode: loc.iataCode,
-      name: loc.name,
-      cityName: loc.address?.cityName,
-      countryCode: loc.address?.countryCode,
-      subType: loc.subType, // AIRPORT or CITY
-    }));
-
-    res.json({ locations });
+    res.json({ url: `https://skandi-amadeus.onrender.com/${filename}` });
   } catch (err) {
-    console.error("Locations exception:", err);
-    res.status(500).json({ error: "Server error on locations search" });
+    console.error("PDF creation error:", err);
+    res.status(500).json({ error: "Could not generate PDF" });
   }
 });
 
 // -----------------------------
-// SKANDI Charter search (stub)
+// EMAIL CONFIRMATION
 // -----------------------------
-app.post("/api/skandi/charters/search", async (req, res) => {
+app.post("/api/email/confirmation", async (req, res) => {
   try {
-    const { originLocationCode, destinationLocationCode, departureDate, adults } = req.body;
+    const { email, name, itineraryUrl } = req.body;
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: false,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
 
-    // For now this is mocked. Later you can replace with real charter API or
-    // tailored Amadeus calls.
-    const sampleCharters = [
-      {
-        id: "CHARTER1",
-        origin: originLocationCode || "ARN",
-        destination: destinationLocationCode || "RHO",
-        departureDate: departureDate,
-        airline: "SKANDI Charter",
-        price: { currency: "EUR", total: "799.00" },
-      },
-      {
-        id: "CHARTER2",
-        origin: originLocationCode || "ARN",
-        destination: destinationLocationCode || "AYT",
-        departureDate: departureDate,
-        airline: "SKANDI Charter",
-        price: { currency: "EUR", total: "699.00" },
-      },
-    ];
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: email,
+      subject: "Your SKANDI Travels Booking Confirmation",
+      html: `<h2>Hello ${name},</h2>
+      <p>Thank you for booking with SKANDI Travels.</p>
+      <p>Your itinerary is available here:</p>
+      <a href="${itineraryUrl}">${itineraryUrl}</a>`,
+    });
 
-    res.json({ charters: sampleCharters, passengers: adults || 1 });
+    res.json({ success: true });
   } catch (err) {
-    console.error("Charter search exception:", err);
-    res.status(500).json({ error: "Server error on charter search" });
+    console.error("Email error:", err);
+    res.status(500).json({ error: "Email failed" });
   }
 });
 
-// ===========================================
-// ROOT ROUTE
-// ===========================================
-app.get("/", (req, res) => {
-  res.send("SKANDI Amadeus API is running ✅");
-});
-
-// ===========================================
-// START SERVER
-// ===========================================
-app.listen(PORT, () => {
-  console.log(`SKANDI Amadeus server running on http://localhost:${PORT}`);
-});
+// -----------------------------
+app.listen(PORT || 4000, () =>
+  console.log(`SKANDI Amadeus server running on http://localhost:${PORT || 4000}`)
+);
