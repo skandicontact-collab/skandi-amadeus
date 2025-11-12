@@ -257,6 +257,85 @@ app.post("/api/amadeus/hotels/search", async (req, res) => {
   }
 });
 
+// -----------------------------
+// Airport / City autocomplete
+// -----------------------------
+app.get("/api/amadeus/airports", async (req, res) => {
+  try {
+    const q = (req.query.q || "").trim();
+    if (!q || q.length < 2) {
+      return res.json({ locations: [] });
+    }
+    const token = await getAccessToken();
+
+    const params = new URLSearchParams();
+    params.set("keyword", q);
+    params.set("subType", "AIRPORT,CITY");
+    params.set("page[limit]", "10");
+
+    const amadeusRes = await fetch(
+      `${AMADEUS_BASE}/v1/reference-data/locations?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    const data = await amadeusRes.json();
+    if (!amadeusRes.ok) {
+      console.error("Locations error:", data);
+      return res.status(amadeusRes.status).json(data);
+    }
+
+    const locations = (data.data || []).map((loc) => ({
+      iataCode: loc.iataCode,
+      name: loc.name,
+      cityName: loc.address?.cityName,
+      countryCode: loc.address?.countryCode,
+      subType: loc.subType, // AIRPORT or CITY
+    }));
+
+    res.json({ locations });
+  } catch (err) {
+    console.error("Locations exception:", err);
+    res.status(500).json({ error: "Server error on locations search" });
+  }
+});
+
+// -----------------------------
+// SKANDI Charter search (stub)
+// -----------------------------
+app.post("/api/skandi/charters/search", async (req, res) => {
+  try {
+    const { originLocationCode, destinationLocationCode, departureDate, adults } = req.body;
+
+    // For now this is mocked. Later you can replace with real charter API or
+    // tailored Amadeus calls.
+    const sampleCharters = [
+      {
+        id: "CHARTER1",
+        origin: originLocationCode || "ARN",
+        destination: destinationLocationCode || "RHO",
+        departureDate: departureDate,
+        airline: "SKANDI Charter",
+        price: { currency: "EUR", total: "799.00" },
+      },
+      {
+        id: "CHARTER2",
+        origin: originLocationCode || "ARN",
+        destination: destinationLocationCode || "AYT",
+        departureDate: departureDate,
+        airline: "SKANDI Charter",
+        price: { currency: "EUR", total: "699.00" },
+      },
+    ];
+
+    res.json({ charters: sampleCharters, passengers: adults || 1 });
+  } catch (err) {
+    console.error("Charter search exception:", err);
+    res.status(500).json({ error: "Server error on charter search" });
+  }
+});
+
 // ===========================================
 // ROOT ROUTE
 // ===========================================
